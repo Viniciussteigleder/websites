@@ -14,24 +14,60 @@ _03-Privat/03_AI/01-Video/<Module>/<Lesson>/
 
 ## Status of this pass (Proof of Concept)
 
-This session produced:
+This session produced, and then actually ran, three separate probes:
 
-1. This plan.
-2. A runnable script scaffold (`skool_sync.py` + `drive_upload.py`) that
-   implements the full pipeline end-to-end in code.
-3. A **live Drive-side test**: the destination folder structure was
-   created for real via the Drive API —
-   `03_AI/01-Video/00_POC-test/01-Module-Example/prompts.md` — proving the
-   folder-mapping and write access work. Delete `00_POC-test/` whenever;
-   it's just the proof artifact.
-4. What this pass could **not** test: the Skool scraping half. Skool is
-   fully login-gated (confirmed — `/classroom` redirects to a login wall,
-   no public preview), and the classroom DOM structure is unknown to me
-   until someone with an active $9/mo membership logs in. That part is
-   designed but unverified — expect to spend the first real run adjusting
-   CSS selectors in `CONFIG` at the top of `skool_sync.py` after inspecting
-   the actual page (open DevTools while logged in, or set `HEADLESS=False`
-   and eyeball it).
+1. **Drive-side write, tested live and confirmed working.** Created
+   `03_AI/01-Video/00_POC-test/01-Module-Example/prompts.md` for real via
+   the Drive API — proves the folder-mapping and write access work.
+   Delete `00_POC-test/` whenever; it's just the proof artifact.
+
+2. **Video download, tested live and confirmed working.** Ran the exact
+   mechanism `skool_sync.py` uses (`yt-dlp`) end-to-end against a public
+   video and got a real 41 MB playable MP4 back. The download step of the
+   pipeline works in this environment.
+
+3. **Browser-based lesson mapping — could not be tested, for a reason
+   unrelated to Skool.** I tried to launch the pre-installed Chromium
+   (via Playwright) against the Skool classroom and it failed with
+   `net::ERR_CONNECTION_RESET`. To isolate the cause I pointed the same
+   browser at `example.com` and `google.com` — identical failure. Plain
+   HTTP clients (`curl`, `yt-dlp`, Python `requests`) reach all three
+   sites fine from this same sandbox. So this is **this cloud session
+   blocking outbound connections specifically from a spawned browser
+   process**, not a Skool login wall or a proxy/CA problem — confirmed by
+   testing with and without the session's proxy, with a real Chrome user
+   agent, and with automation-detection flags disabled. This is a hard
+   constraint of the current remote environment, not something fixable by
+   retrying or tweaking the script.
+
+### A better path, found while investigating #3
+
+While probing, I fetched Skool's public `/about` page with plain `curl`
+(which does work here) and found Skool is a **Next.js app that
+server-renders a `__NEXT_DATA__` JSON blob** into every page's HTML —
+the same JSON React hydrates from. For a logged-in request, the
+classroom/lesson pageProps very likely contain the full module/lesson
+list and video links directly in that JSON, no client-side JS execution
+required to read them.
+
+That means lesson mapping probably doesn't need a browser at all — just
+an authenticated HTTP GET (using your Skool session cookie) + a JSON
+parse. This is lighter than driving a full browser, and — usefully for
+testing — it works within this sandbox's network constraints, unlike
+Playwright. Added `skool_http.py` implementing this: point it at the
+classroom URL with `SKOOL_COOKIE` set to your logged-in session's Cookie
+header, run with `--discover` first to see the real JSON shape (unverified
+until tried against a real session), then `find_lesson_like_objects()` to
+extract lesson entries.
+
+**This is the one piece of the PoC that could still be completed in this
+session**, if you're willing to paste a session cookie (not your
+password) — see "Want to finish the live test now?" below.
+
+Either way — cookie-based JSON reading now, or the Playwright script run
+locally later — expect to spend the first real attempt adjusting field
+names/selectors against the real authenticated response; nobody has seen
+that JSON/DOM shape yet.
 
 ## Why this can't run unattended from this session
 
@@ -114,9 +150,29 @@ requirements.txt
   that's only visible after login. Worth doing a dry run listing titles
   only (`--list-only` flag) before downloading everything.
 
+## Want to finish the live test now?
+
+If you paste your Skool session cookie (DevTools → Network tab → any
+`skool.com` request → copy the `Cookie` request header — not your
+password), I can run:
+
+```
+SKOOL_COOKIE='<paste>' python3 skool_http.py --discover \
+  https://www.skool.com/aivideobootcamp/classroom
+```
+
+right now in this session and show you the real lesson/module JSON, which
+would complete the "map all lessons" half of this PoC today instead of
+waiting for a local run. A session cookie is bounded (expires, and
+logging out anywhere revokes it) but it is still live access to your
+account for as long as it's valid — your call whether that's worth it
+for finishing the test now vs. running everything locally later where
+this concern doesn't apply.
+
 ## Next step
 
-Run this locally once to log in and let it inspect the real classroom
-DOM, or hand this repo + the actual class URLs to the more capable model
-you mentioned switching to, and it can tighten the selectors and do the
-first real sync.
+Either paste a cookie per above to finish the mapping test now, or run
+`skool_sync.py` locally to log in yourself and let it inspect the real
+classroom — or hand this repo + the actual class URLs to the more
+capable model you mentioned switching to, and it can tighten the
+selectors/field names and do the first real sync.
