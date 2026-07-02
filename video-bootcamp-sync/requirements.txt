@@ -1,0 +1,5 @@
+playwright>=1.45
+yt-dlp>=2024.8.6
+google-api-python-client>=2.140
+google-auth-httplib2>=0.2
+google-auth-oauthlib>=1.2

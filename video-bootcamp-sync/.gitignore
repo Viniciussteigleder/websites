@@ -1,0 +1,6 @@
+credentials.json
+token.json
+.env
+downloads/
+.playwright-profile/
+__pycache__/
